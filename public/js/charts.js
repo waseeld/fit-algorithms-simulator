@@ -68,6 +68,15 @@
         return [];
     }
 
+    // Team 1's analyzer returns { name, metrics: {...} }; older callers pass
+    // the numbers at the top level. Accept both.
+    function flatten(item) {
+        if (item && typeof item === "object" && item.metrics && typeof item.metrics === "object") {
+            return Object.assign({}, item, item.metrics);
+        }
+        return item;
+    }
+
     function utilizationPercent(item) {
         const derivedFromSizes = toNumber(item.totalMemory) > 0
             ? (toNumber(item.usedMemory) / toNumber(item.totalMemory)) * 100
@@ -92,6 +101,7 @@
     // Cleans the results and orders them First, Best, Worst Fit.
     function prepareResults(results) {
         const rows = toList(results)
+            .map(([name, item]) => [name, flatten(item)])
             .filter(([, item]) => item && typeof item === "object")
             .map(([name, item]) => ({
                 name: String(name || "Unknown"),

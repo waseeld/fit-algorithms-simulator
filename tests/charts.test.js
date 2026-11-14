@@ -169,3 +169,12 @@ test("a canvas without a drawing context is handled", () => {
     const out = Charts.renderUtilizationChart(canvas, sample());
     assert.equal(out.ok, false);
 });
+
+test("prepareResults reads numbers nested under metrics (analyzer shape)", () => {
+    const rows = Charts.prepareResults([
+        { name: "Best Fit", metrics: { memoryUtilization: 68.6, internalFragmentation: 0, externalFragmentation: 10 } }
+    ]);
+    assert.equal(rows[0].name, "Best Fit");
+    assert.equal(Math.round(rows[0].utilization * 10) / 10, 68.6);
+    assert.equal(rows[0].external, 10);
+});
