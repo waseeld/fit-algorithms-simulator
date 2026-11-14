@@ -118,7 +118,7 @@ test("Team 1 simulation results work with presets and charts", (t) => {
         const list = Array.isArray(results) ? results : Object.values(results.results || results);
         for (const item of list) {
             const name = item.algorithmName || item.name;
-            assert.equal(item.allocatedCount, preset.expected[name], `${preset.id} / ${name}`);
+            assert.equal((item.metrics || item).allocatedCount, preset.expected[name], `${preset.id} / ${name}`);
         }
 
         const drawn = sandbox.SimulationCharts.renderComparison(fakeCanvas(), fakeCanvas(), results);
