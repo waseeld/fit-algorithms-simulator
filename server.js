@@ -91,52 +91,72 @@ function serveFile(filePath, res, method) {
 
 function createServer() {
     return http.createServer((req, res) => {
-        const method = req.method || "GET";
-        if (method !== "GET" && method !== "HEAD") {
-            res.setHeader("Allow", "GET, HEAD");
-            sendText(res, 405, "Method Not Allowed", method);
-            return;
-        }
-
-        let pathname;
         try {
-            pathname = decodeURIComponent((req.url || "/").split("?")[0]);
-        } catch {
-            sendText(res, 400, "Bad Request", method);
-            return;
+            handleRequest(req, res);
+        } catch (err) {
+            // Last line of defence: one bad request must never stop the server.
+            if (!res.headersSent) {
+                sendText(res, 500, "Internal Server Error");
+            } else {
+                res.destroy();
+            }
         }
-
-        if (pathname === "/api/info") {
-            // 'ok' means the local HTTP server is responding, not that
-            // the simulation algorithms or user interface are complete.
-            const body = Buffer.from(JSON.stringify({
-                name: "Memory Allocation Simulator",
-                version,
-                status: "ok",
-                scope: "local-server",
-                plannedAlgorithms: ["First Fit", "Best Fit", "Worst Fit"]
-            }), "utf8");
-
-            res.writeHead(200, {
-                "Content-Type": "application/json; charset=utf-8",
-                "X-Content-Type-Options": "nosniff",
-                "Content-Length": body.length
-            });
-            res.end(method === "HEAD" ? undefined : body);
-            return;
-        }
-
-        const relativePath = pathname === "/" ? "index.html" : pathname;
-        const normalized = relativePath.replace(/^[/\\]+/, "");
-        const filePath = path.resolve(PUBLIC_DIR, normalized);
-
-        if (!insidePublic(filePath)) {
-            sendText(res, 403, "Forbidden", method);
-            return;
-        }
-
-        serveFile(filePath, res, method);
     });
+}
+
+function handleRequest(req, res) {
+    const method = req.method || "GET";
+    if (method !== "GET" && method !== "HEAD") {
+        res.setHeader("Allow", "GET, HEAD");
+        sendText(res, 405, "Method Not Allowed", method);
+        return;
+    }
+
+    let pathname;
+    try {
+        pathname = decodeURIComponent((req.url || "/").split("?")[0]);
+    } catch {
+        sendText(res, 400, "Bad Request", method);
+        return;
+    }
+
+    // A NUL byte makes fs.realpath() throw synchronously, which would
+    // crash the whole process, so reject it before touching the disk.
+    if (pathname.includes("\0")) {
+        sendText(res, 400, "Bad Request", method);
+        return;
+    }
+
+    if (pathname === "/api/info") {
+        // 'ok' means the local HTTP server is responding, not that
+        // the simulation algorithms or user interface are complete.
+        const body = Buffer.from(JSON.stringify({
+            name: "Memory Allocation Simulator",
+            version,
+            status: "ok",
+            scope: "local-server",
+            plannedAlgorithms: ["First Fit", "Best Fit", "Worst Fit"]
+        }), "utf8");
+
+        res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Length": body.length
+        });
+        res.end(method === "HEAD" ? undefined : body);
+        return;
+    }
+
+    const relativePath = pathname === "/" ? "index.html" : pathname;
+    const normalized = relativePath.replace(/^[/\\]+/, "");
+    const filePath = path.resolve(PUBLIC_DIR, normalized);
+
+    if (!insidePublic(filePath)) {
+        sendText(res, 403, "Forbidden", method);
+        return;
+    }
+
+    serveFile(filePath, res, method);
 }
 
 function startServer(port = DEFAULT_PORT) {

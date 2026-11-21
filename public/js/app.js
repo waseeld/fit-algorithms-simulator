@@ -13,6 +13,38 @@ const ALGO_RULES = {
     'Worst Fit': 'Worst Fit: allocate the largest available hole.'
 };
 
+// Limits for the Setup form (all sizes are whole numbers of KB).
+const LIMITS = {
+    block: { min: 10, max: 100000 },
+    proc: { min: 5, max: 100000 },
+    os: { min: 0, max: 100000 },
+    maxItems: 30
+};
+
+// The speed slider value is the speed (right = faster). The play timer needs
+// a delay in ms, so the delay is the slider total minus the slider value.
+const SPEED_SLIDER_TOTAL = 2000;
+
+// Reads a size typed by the user. Returns { ok: true, value } or
+// { ok: false, error } with a message that can be shown on screen.
+function parseSize(raw, limits, label) {
+    const text = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (text === '') {
+        return { ok: false, error: `Enter a ${label} size in KB.` };
+    }
+    const value = Number(text);
+    if (!Number.isInteger(value)) {
+        return { ok: false, error: `The ${label} size must be a whole number of KB.` };
+    }
+    if (value < limits.min || value > limits.max) {
+        return {
+            ok: false,
+            error: `The ${label} size must be between ${limits.min} and ${limits.max.toLocaleString()} KB.`
+        };
+    }
+    return { ok: true, value };
+}
+
 class AppController {
     constructor() {
         this.currentTab = 'setup';
@@ -32,7 +64,13 @@ class AppController {
         this.currentStepIdx = -1;
         this.isPlaying = false;
         this.playTimer = null;
-        this.playbackSpeed = 800; // ms
+        this.playbackSpeed = 800; // ms, replaced by the slider value in bindEvents
+        this.compactedFromStep = null; // first step that was re-run after a compaction
+
+        // Comparison state
+        this.lastComparison = null;
+        this.resizeTimer = null;
+        this.countAnimations = {};
 
         // Visualizers
         this.setupVisualizer = new MemoryVisualizer('setup-preview-map', 'setup-preview-ruler');
@@ -48,6 +86,7 @@ class AppController {
         this.bindKeyboardShortcuts();
         this.renderPresetCards();
         this.renderSetupWorkload();
+        this.updateCompactButton();
         this.runComparison();
     }
 
@@ -79,18 +118,10 @@ class AppController {
         const radioDynamic = document.getElementById('radio-mode-dynamic');
         if (radioFixed && radioDynamic) {
             radioFixed.addEventListener('change', () => {
-                if (radioFixed.checked) {
-                    this.currentMode = 'fixed';
-                    this.renderSetupWorkload();
-                    soundFX.playClick();
-                }
+                if (radioFixed.checked) this.setMode('fixed');
             });
             radioDynamic.addEventListener('change', () => {
-                if (radioDynamic.checked) {
-                    this.currentMode = 'dynamic';
-                    this.renderSetupWorkload();
-                    soundFX.playClick();
-                }
+                if (radioDynamic.checked) this.setMode('dynamic');
             });
         }
 
@@ -98,40 +129,44 @@ class AppController {
         const osInput = document.getElementById('input-os-reserved');
         if (osInput) {
             osInput.addEventListener('input', (e) => {
-                this.osReserved = Math.max(0, parseInt(e.target.value) || 0);
-                this.updateSetupPreview();
+                const parsed = parseSize(e.target.value === '' ? '0' : e.target.value, LIMITS.os, 'OS');
+                if (!parsed.ok) {
+                    this.showSetupMessage(parsed.error);
+                    return;
+                }
+                this.showSetupMessage('');
+                this.osReserved = parsed.value;
+                this.activePresetId = 'custom';
+                this.renderPresetCards();
+                this.renderSetupWorkload();
+            });
+            // When the field loses focus, show the value that is really in use.
+            osInput.addEventListener('change', () => {
+                osInput.value = this.osReserved;
+                this.showSetupMessage('');
             });
         }
 
-        // Add Block
+        // Add Block / Add Process (button click or Enter key)
         const btnAddBlock = document.getElementById('btn-add-block');
         if (btnAddBlock) {
-            btnAddBlock.addEventListener('click', () => {
-                const val = parseInt(document.getElementById('input-block-size').value);
-                if (val > 0) {
-                    this.blocks.push(val);
-                    this.activePresetId = 'custom';
-                    this.renderPresetCards();
-                    this.renderSetupWorkload();
-                    soundFX.playClick();
-                }
-            });
+            btnAddBlock.addEventListener('click', () => this.addItem('block'));
         }
-
-        // Add Process
         const btnAddProc = document.getElementById('btn-add-proc');
         if (btnAddProc) {
-            btnAddProc.addEventListener('click', () => {
-                const val = parseInt(document.getElementById('input-proc-size').value);
-                if (val > 0) {
-                    this.processes.push(val);
-                    this.activePresetId = 'custom';
-                    this.renderPresetCards();
-                    this.renderSetupWorkload();
-                    soundFX.playClick();
-                }
-            });
+            btnAddProc.addEventListener('click', () => this.addItem('proc'));
         }
+        [['input-block-size', 'block'], ['input-proc-size', 'proc']].forEach(([id, kind]) => {
+            const field = document.getElementById(id);
+            if (field) {
+                field.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.addItem(kind);
+                    }
+                });
+            }
+        });
 
         // Randomize
         const btnRandom = document.getElementById('btn-randomize');
@@ -142,6 +177,7 @@ class AppController {
                 this.blocks = Array.from({ length: bCount }, () => Math.floor(Math.random() * 6 + 1) * 100);
                 this.processes = Array.from({ length: pCount }, () => Math.floor(Math.random() * 5 + 1) * 80 + 20);
                 this.activePresetId = 'custom';
+                this.showSetupMessage('');
                 this.renderPresetCards();
                 this.renderSetupWorkload();
                 soundFX.playClick();
@@ -155,6 +191,7 @@ class AppController {
                 this.blocks = [];
                 this.processes = [];
                 this.activePresetId = 'custom';
+                this.showSetupMessage('');
                 this.renderPresetCards();
                 this.renderSetupWorkload();
                 soundFX.playClick();
@@ -166,6 +203,8 @@ class AppController {
         if (btnSort) {
             btnSort.addEventListener('click', () => {
                 this.processes.sort((a, b) => b - a);
+                this.activePresetId = 'custom';
+                this.renderPresetCards();
                 this.renderSetupWorkload();
                 soundFX.playClick();
             });
@@ -176,11 +215,11 @@ class AppController {
         if (btnStartSim) {
             btnStartSim.addEventListener('click', () => {
                 if (this.blocks.length === 0 || this.processes.length === 0) {
-                    alert('Add at least one memory block and one process first.');
+                    this.showSetupMessage('Add at least one memory partition and one process first.');
                     return;
                 }
+                this.showSetupMessage('');
                 this.switchTab('sim');
-                this.prepareSimulation();
                 soundFX.playClick();
             });
         }
@@ -211,11 +250,12 @@ class AppController {
             btnCompact.addEventListener('click', () => this.triggerCompaction());
         }
 
-        // Playback Speed Slider
+        // Playback Speed Slider (right = faster)
         const speedSlider = document.getElementById('sim-speed-slider');
         if (speedSlider) {
+            this.playbackSpeed = SPEED_SLIDER_TOTAL - parseInt(speedSlider.value, 10);
             speedSlider.addEventListener('input', (e) => {
-                this.playbackSpeed = parseInt(e.target.value);
+                this.playbackSpeed = SPEED_SLIDER_TOTAL - parseInt(e.target.value, 10);
                 if (this.isPlaying) {
                     clearInterval(this.playTimer);
                     this.playTimer = setInterval(() => this.stepForward(), this.playbackSpeed);
@@ -230,30 +270,62 @@ class AppController {
         if (btnPdf) btnPdf.addEventListener('click', () => this.exportPDF());
         if (btnCsv) btnCsv.addEventListener('click', () => this.exportCSV());
         if (btnJson) btnJson.addEventListener('click', () => this.exportJSON());
+
+        // The charts are drawn at the size of their canvas, so redraw them
+        // when the window size changes.
+        window.addEventListener('resize', () => {
+            clearTimeout(this.resizeTimer);
+            this.resizeTimer = setTimeout(() => {
+                if (this.currentTab === 'compare') this.renderCharts();
+            }, 150);
+        });
     }
 
     bindKeyboardShortcuts() {
         window.addEventListener('keydown', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            // Never take over browser shortcuts such as Ctrl+C, Ctrl+R or Cmd+C.
+            if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+
+            const target = e.target;
+            const tag = target && target.tagName;
+            // Typing in a field or moving a slider: the keys belong to the field.
+            if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' ||
+                (target && target.isContentEditable)) {
+                return;
+            }
+            // Space and Enter already activate a focused button or card.
+            const role = target && target.getAttribute ? target.getAttribute('role') : null;
+            if ((tag === 'BUTTON' || tag === 'A' || role === 'button') &&
+                (e.code === 'Space' || e.code === 'Enter')) {
+                return;
+            }
+
+            // Simulation shortcuts only work while the simulation tab is open.
+            const onSim = this.currentTab === 'sim';
 
             switch (e.code) {
                 case 'Space':
+                    if (!onSim) return;
                     e.preventDefault();
                     this.togglePlay();
                     break;
                 case 'ArrowRight':
+                    if (!onSim) return;
                     e.preventDefault();
                     this.stepForward();
                     break;
                 case 'ArrowLeft':
+                    if (!onSim) return;
                     e.preventDefault();
                     this.stepBackward();
                     break;
                 case 'KeyC':
+                    if (!onSim) return;
                     e.preventDefault();
                     this.triggerCompaction();
                     break;
                 case 'KeyR':
+                    if (!onSim) return;
                     e.preventDefault();
                     this.resetSim();
                     break;
@@ -267,21 +339,69 @@ class AppController {
     }
 
     switchTab(tabId) {
+        const previousTab = this.currentTab;
         this.currentTab = tabId;
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tab === tabId);
+            const isActive = btn.dataset.tab === tabId;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', String(isActive));
         });
         document.querySelectorAll('.tab-pane').forEach(pane => {
             pane.classList.toggle('active', pane.id === `tab-${tabId}`);
         });
 
+        // The playback timer must not keep running (and beeping) on other tabs.
+        if (tabId !== 'sim') this.pauseSim();
+
         if (tabId === 'sim') {
-            this.prepareSimulation();
+            // Opening the tab starts a fresh run; choosing it again keeps the progress.
+            if (previousTab !== 'sim' || this.steps.length === 0) this.prepareSimulation();
         } else if (tabId === 'results') {
             this.renderResults();
         } else if (tabId === 'compare') {
             this.runComparison();
         }
+    }
+
+    // Shows a short validation message under the Setup form ('' clears it).
+    showSetupMessage(text) {
+        const el = document.getElementById('setup-message');
+        if (el) el.textContent = text || '';
+    }
+
+    setMode(mode) {
+        this.currentMode = mode;
+        // The loaded preset was designed for its own mode, so it is now a custom setup.
+        this.activePresetId = 'custom';
+        this.renderPresetCards();
+        this.renderSetupWorkload();
+        this.updateCompactButton();
+        soundFX.playClick();
+    }
+
+    // Adds one partition ('block') or one process ('proc') from the Setup form.
+    addItem(kind) {
+        const isBlock = kind === 'block';
+        const input = document.getElementById(isBlock ? 'input-block-size' : 'input-proc-size');
+        const list = isBlock ? this.blocks : this.processes;
+        const noun = isBlock ? 'partition' : 'process';
+
+        if (list.length >= LIMITS.maxItems) {
+            this.showSetupMessage(`At most ${LIMITS.maxItems} ${noun}s are allowed.`);
+            return;
+        }
+        const parsed = parseSize(input ? input.value : '', isBlock ? LIMITS.block : LIMITS.proc, noun);
+        if (!parsed.ok) {
+            this.showSetupMessage(parsed.error);
+            return;
+        }
+
+        list.push(parsed.value);
+        this.activePresetId = 'custom';
+        this.showSetupMessage('');
+        this.renderPresetCards();
+        this.renderSetupWorkload();
+        soundFX.playClick();
     }
 
     renderPresetCards() {
@@ -290,8 +410,13 @@ class AppController {
 
         container.innerHTML = '';
         PRESETS.forEach((p, presetIdx) => {
+            const isActive = this.activePresetId === p.id;
             const card = document.createElement('div');
-            card.className = `preset-card-item ${this.activePresetId === p.id ? 'active' : ''}`;
+            card.className = `preset-card-item ${isActive ? 'active' : ''}`;
+            card.dataset.presetId = p.id;
+            card.setAttribute('role', 'button');
+            card.setAttribute('aria-pressed', String(isActive));
+            card.tabIndex = 0;
             if (p.description) card.title = p.description;
             const badgeText = `#${presetIdx + 1} · ${(p.mode || 'fixed').toUpperCase()}`;
             const title = p.name;
@@ -307,17 +432,33 @@ class AppController {
                 </div>
             `;
 
-            card.addEventListener('click', () => {
+            const choosePreset = (fromKeyboard) => {
                 this.activePresetId = p.id;
                 this.blocks = [...p.blocks];
                 this.processes = [...p.processes];
                 this.currentMode = p.mode || 'fixed';
                 this.osReserved = p.osReserved || 0;
+                this.showSetupMessage('');
                 this.syncModeControls();
+                this.updateCompactButton();
 
                 this.renderPresetCards();
                 this.renderSetupWorkload();
                 soundFX.playClick();
+
+                // Rebuilding the cards drops the focus; give it back for keyboard users.
+                if (fromKeyboard) {
+                    const again = container.querySelector(`[data-preset-id="${p.id}"]`);
+                    if (again) again.focus();
+                }
+            };
+
+            card.addEventListener('click', () => choosePreset(false));
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    choosePreset(true);
+                }
             });
 
             container.appendChild(card);
@@ -346,7 +487,7 @@ class AppController {
                 chip.className = 'item-chip block-chip';
                 chip.innerHTML = `
                     <span>B${idx + 1}: <strong>${sz}k</strong></span>
-                    <button class="btn-chip-remove" title="Remove">&times;</button>
+                    <button class="btn-chip-remove" title="Remove" aria-label="Remove partition B${idx + 1}">&times;</button>
                 `;
                 chip.querySelector('.btn-chip-remove').addEventListener('click', () => {
                     this.blocks.splice(idx, 1);
@@ -368,7 +509,7 @@ class AppController {
                 chip.className = 'item-chip proc-chip';
                 chip.innerHTML = `
                     <span>P${idx + 1}: <strong>${sz}k</strong></span>
-                    <button class="btn-chip-remove" title="Remove">&times;</button>
+                    <button class="btn-chip-remove" title="Remove" aria-label="Remove process P${idx + 1}">&times;</button>
                 `;
                 chip.querySelector('.btn-chip-remove').addEventListener('click', () => {
                     this.processes.splice(idx, 1);
@@ -381,6 +522,7 @@ class AppController {
             });
         }
 
+        // Total physical memory = every partition plus the OS area.
         const totalMem = this.blocks.reduce((a, b) => a + b, 0) + this.osReserved;
         const totalDem = this.processes.reduce((a, b) => a + b, 0);
 
@@ -397,6 +539,17 @@ class AppController {
         this.setupVisualizer.render(previewBlocks);
     }
 
+    // Compaction merges free holes, so it only makes sense with dynamic partitions.
+    updateCompactButton() {
+        const btn = document.getElementById('btn-sim-compact');
+        if (!btn) return;
+        const dynamic = this.currentMode === 'dynamic';
+        btn.disabled = !dynamic;
+        btn.title = dynamic
+            ? 'Compact memory: merge all free holes into one (shortcut C)'
+            : 'Compaction needs dynamic partitions. Fixed partitions cannot be merged.';
+    }
+
     prepareSimulation() {
         this.pauseSim();
         const allocator = Algorithms.getAllocator(this.activeAlgo);
@@ -406,6 +559,8 @@ class AppController {
         const sim = allocator.runSimulation(initBlocks, initProcs, this.currentMode);
         this.steps = sim.steps;
         this.currentStepIdx = -1;
+        this.compactedFromStep = null;
+        this.updateCompactButton();
 
         // Render initial clear state
         this.simVisualizer.render(initBlocks);
@@ -430,6 +585,8 @@ class AppController {
         if (this.currentStepIdx + 1 < this.steps.length) {
             this.currentStepIdx++;
             this.applyStep(this.currentStepIdx);
+            // Reaching the last step ends playback right away.
+            if (this.currentStepIdx + 1 >= this.steps.length) this.pauseSim();
         } else {
             this.pauseSim();
         }
@@ -500,11 +657,12 @@ class AppController {
             const verdictText = c.chosen ? 'Chosen' : (c.fits ? 'Fits' : 'Too small');
             const verdictClass = c.chosen ? 'chosen' : (c.fits ? 'fits' : 'small');
 
+            // A hole that is too small has no leftover, so show a dash, not a negative number.
             tr.innerHTML = `
                 <td><strong>${c.label}</strong></td>
                 <td>${c.blockSize} KB</td>
                 <td>${c.fits ? 'Yes' : 'No'}</td>
-                <td>${c.leftover} KB</td>
+                <td>${c.fits ? `${c.leftover} KB` : '-'}</td>
                 <td><span class="verdict-tag ${verdictClass}">${verdictText}</span></td>
             `;
             tbody.appendChild(tr);
@@ -516,6 +674,11 @@ class AppController {
         if (!textEl) return;
         const p = step.process;
         let explanation = '';
+
+        // The first step that runs after a compaction says so.
+        const compactionNote = (this.compactedFromStep !== null && this.compactedFromStep === this.currentStepIdx)
+            ? `<div style="color:var(--purple); font-weight:700; font-size:12px; margin-bottom:4px;">⚡ Placed in the compacted memory</div>`
+            : '';
 
         if (step.status === 'ALLOCATED') {
             if (this.activeAlgo === 'First Fit') {
@@ -536,6 +699,7 @@ class AppController {
             }
 
             textEl.innerHTML = `
+                ${compactionNote}
                 <div style="color:var(--success); font-weight:800; font-size:14px; margin-bottom:4px;">
                     ✓ Allocated: ${p.name} (${p.size} KB) &rarr; ${step.chosenLabel}
                 </div>
@@ -552,9 +716,13 @@ class AppController {
             let failMsg = `${p.name} (${p.size} KB) could not be allocated: the largest free hole is only ${largestFree} KB.`;
             if (totalFree >= p.size) {
                 failMsg += `<br/><strong style="color:var(--danger);">External fragmentation: ${totalFree} KB is free in total (≥ ${p.size} KB), but it is not contiguous.</strong>`;
+                if (this.currentMode === 'dynamic') {
+                    failMsg += `<br/>Press <strong>⚡ Compact</strong> (or C) to merge the free holes and retry.`;
+                }
             }
 
             textEl.innerHTML = `
+                ${compactionNote}
                 <div style="color:var(--danger); font-weight:800; font-size:14px; margin-bottom:4px;">
                     ✗ Allocation failed: ${p.name} (${p.size} KB)
                 </div>
@@ -606,20 +774,66 @@ class AppController {
         soundFX.playClick();
     }
 
-    triggerCompaction() {
-        soundFX.playCompact();
-        const currentBlocks = this.currentStepIdx >= 0 && this.steps[this.currentStepIdx] ?
-            this.steps[this.currentStepIdx].snapshot :
-            MemoryModels.buildInitialMemory(this.blocks, this.osReserved);
+    // Shows a short message in the rationale box (used when nothing can be compacted).
+    showRationaleNote(html) {
+        const textEl = document.getElementById('sim-decision-text');
+        if (textEl) {
+            textEl.innerHTML = `<div style="color:var(--purple); font-weight:700; font-size:13px;">${html}</div>`;
+        }
+    }
 
+    // Compaction moves every allocated block to the start of memory and merges
+    // all free holes into one. The processes that have not been placed yet (and
+    // the one that just failed) are then run again on the compacted memory.
+    triggerCompaction() {
+        if (this.steps.length === 0) return;
+
+        if (this.currentMode !== 'dynamic') {
+            this.showRationaleNote('⚡ Compaction is only available with dynamic partitions. Fixed partitions have a fixed size and cannot be merged.');
+            return;
+        }
+
+        this.pauseSim();
+        const idx = this.currentStepIdx;
+        const currentBlocks = idx >= 0 && this.steps[idx]
+            ? this.steps[idx].snapshot
+            : MemoryModels.buildInitialMemory(this.blocks, this.osReserved);
+
+        // Nothing to do when there are no holes, or the only hole is already at the end.
+        const holeCount = currentBlocks.filter(b => b.isFree).length;
+        const lastIsFree = currentBlocks.length > 0 && currentBlocks[currentBlocks.length - 1].isFree;
+        if (holeCount === 0 || (holeCount === 1 && lastIsFree)) {
+            this.showRationaleNote('⚡ Memory is already compact: there is no free hole in the middle of memory to merge.');
+            return;
+        }
+
+        soundFX.playCompact();
         const result = MemoryModels.performCompaction(currentBlocks);
+
+        // Run again from the failed process (or from the next one) on the compacted memory.
+        const failedNow = idx >= 0 && this.steps[idx].status === 'FAILED';
+        const startIdx = failedNow ? idx : idx + 1;
+        const pending = MemoryModels.buildProcesses(this.processes).slice(startIdx);
+        let nextText = '';
+        if (pending.length > 0) {
+            const allocator = Algorithms.getAllocator(this.activeAlgo);
+            const rerun = allocator.runSimulation(result.compactedBlocks, pending, this.currentMode);
+            rerun.steps.forEach((s, k) => { s.stepNumber = startIdx + k + 1; });
+            this.steps = this.steps.slice(0, startIdx).concat(rerun.steps);
+            this.currentStepIdx = startIdx - 1;
+            this.compactedFromStep = startIdx;
+            nextText = ` Press <strong>Next Step</strong> to ${failedNow ? 'retry' : 'continue with'} ${pending[0].name} (${pending[0].size} KB) in the compacted memory.`;
+        }
 
         // Re-render memory map with compaction animation
         this.simVisualizer.render(result.compactedBlocks, null, [], true);
+        this.clearCandidateTable();
+        this.renderQueuePills(this.currentStepIdx);
+        this.updateStepCounter();
 
-        // Mark the coalesced hole with shimmer sweep animation
+        // Mark the coalesced hole with shimmer sweep animation (inside the simulation map only)
         setTimeout(() => {
-            const coalescedEl = document.querySelector('.memory-block-card.block-free');
+            const coalescedEl = document.querySelector('#sim-live-map .memory-block-card.block-free');
             if (coalescedEl) coalescedEl.classList.add('coalesced-hole-glow');
         }, 100);
 
@@ -631,7 +845,7 @@ class AppController {
                     ⚡ [Memory Compaction performed - Slides 10-11]
                 </div>
                 <div style="color:var(--text-primary); font-size:13px;">
-                    All free holes were merged into one contiguous hole of ${result.totalFreeMerged} KB.
+                    ${holeCount} free holes were merged into one contiguous hole of ${result.totalFreeMerged} KB.${nextText}
                 </div>
             `;
         }
@@ -641,6 +855,9 @@ class AppController {
     animateValue(id, start, end, duration, decimals = 0, suffix = '') {
         const obj = document.getElementById(id);
         if (!obj) return;
+        // Stop an older animation on the same card so two loops never fight.
+        if (this.countAnimations[id]) window.cancelAnimationFrame(this.countAnimations[id]);
+
         let startTimestamp = null;
         const step = (timestamp) => {
             if (!startTimestamp) startTimestamp = timestamp;
@@ -648,10 +865,12 @@ class AppController {
             const current = (progress * (end - start) + start);
             obj.innerText = `${current.toFixed(decimals)}${suffix}`;
             if (progress < 1) {
-                window.requestAnimationFrame(step);
+                this.countAnimations[id] = window.requestAnimationFrame(step);
+            } else {
+                delete this.countAnimations[id];
             }
         };
-        window.requestAnimationFrame(step);
+        this.countAnimations[id] = window.requestAnimationFrame(step);
     }
 
     renderResults() {
@@ -661,6 +880,7 @@ class AppController {
 
         const sim = allocator.runSimulation(initBlocks, initProcs, this.currentMode);
         const metrics = MemoryAnalyzer.calculateMetrics(this.activeAlgo, sim.finalBlocks, sim.finalProcesses, sim.steps);
+        const dynamic = this.currentMode === 'dynamic';
 
         // Animate KPI numbers
         this.animateValue('kpi-val-util', 0, metrics.memoryUtilization, 600, 1, '%');
@@ -682,7 +902,13 @@ class AppController {
         // Final memory map
         this.resultsVisualizer.render(sim.finalBlocks);
 
-        // Allocation breakdown table
+        // Allocation breakdown table. The last two columns mean different things
+        // in the two modes, so the headers follow the mode.
+        const thPartition = document.getElementById('th-partition');
+        const thLeftover = document.getElementById('th-leftover');
+        if (thPartition) thPartition.innerText = dynamic ? 'Hole Size (before split)' : 'Partition Size';
+        if (thLeftover) thLeftover.innerText = dynamic ? 'Leftover (new free hole)' : 'Wasted (internal frag.)';
+
         const tbody = document.getElementById('results-table-body');
         if (tbody) {
             tbody.innerHTML = '';
@@ -705,19 +931,25 @@ class AppController {
 
         // Mathematical Proof Breakdown (Formula substitution from Chapter 5)
         const freeHoles = sim.finalBlocks.filter(b => b.isFree).map(b => b.size);
+        const osLine = this.osReserved > 0
+            ? `\n   (The ${this.osReserved} KB reserved for the OS is not counted.)`
+            : '';
+        const internalNote = dynamic
+            ? 'Dynamic mode: every hole is split to the exact process size, so this is always 0'
+            : 'Sum of leftover spaces trapped inside allocated partitions';
         const mathProof = `
 ================================================================================
 CHAPTER 5 MEMORY MANAGEMENT FORMULAS & NUMERICAL PROOF
 ================================================================================
 
 1. MEMORY UTILIZATION:
-   Formula:  (Used Memory / Total Physical Memory) × 100%
-   Math:     (${metrics.usedMemory} KB / ${metrics.totalMemory} KB) × 100%
+   Formula:  (Used Memory / Total User Memory) × 100%
+   Math:     (${metrics.usedMemory} KB / ${metrics.totalMemory} KB) × 100%${osLine}
    Result:   = ${metrics.memoryUtilization.toFixed(2)}%
 
 2. INTERNAL FRAGMENTATION (Slide 10):
    Formula:  Σ (Allocated Block Size - Process Size)
-   Math:     Sum of leftover spaces trapped inside allocated partitions
+   Math:     ${internalNote}
    Result:   = ${metrics.internalFragmentation} KB
 
 3. EXTERNAL FRAGMENTATION (Slide 10):
@@ -730,25 +962,60 @@ CHAPTER 5 MEMORY MANAGEMENT FORMULAS & NUMERICAL PROOF
         if (proofEl) proofEl.innerText = mathProof.trim();
     }
 
+    // Builds the banner text. An empty workload, or one where nothing could be
+    // placed, must not be presented as a recommendation.
+    renderWinnerBanner(ranking) {
+        const winnerBanner = document.getElementById('winner-recommendation-box');
+        if (!winnerBanner || !ranking) return;
+
+        const bestM = ranking.bestMetrics;
+        if (bestM.totalProcesses === 0 || this.blocks.length === 0) {
+            winnerBanner.innerHTML = `
+                <div class="winner-trophy-icon">ℹ️</div>
+                <div>
+                    <div class="winner-title">No workload to compare yet</div>
+                    <div class="winner-desc">Add at least one memory partition and one process on the Setup tab to compare the three algorithms.</div>
+                </div>
+            `;
+            return;
+        }
+        if (bestM.allocatedCount === 0) {
+            winnerBanner.innerHTML = `
+                <div class="winner-trophy-icon">⚠️</div>
+                <div>
+                    <div class="winner-title">No algorithm could allocate any process</div>
+                    <div class="winner-desc">Every process is larger than every free partition, so there is nothing to recommend. Add a larger partition or reduce the process sizes.</div>
+                </div>
+            `;
+            return;
+        }
+
+        let extra = '';
+        if (ranking.ties.length > 0) {
+            extra = `<br/><span style="color:var(--primary);">Tied with: ${ranking.ties.join(', ')}</span>`;
+        } else if (ranking.equivalent && ranking.equivalent.length > 0) {
+            extra = `<br/><span style="color:var(--primary);">Same memory result as ${ranking.equivalent.join(', ')}; ranked first because it scanned fewer holes.</span>`;
+        }
+
+        winnerBanner.innerHTML = `
+            <div class="winner-trophy-icon">🏆</div>
+            <div>
+                <div class="winner-title">Recommended algorithm: ${ranking.best}</div>
+                <div class="winner-desc">
+                    Achieved top efficiency allocating <strong>${bestM.allocatedCount}/${bestM.totalProcesses}</strong> processes with <strong>${bestM.memoryUtilization.toFixed(1)}%</strong> utilization, internal fragmentation ${bestM.internalFragmentation} KB and external fragmentation ${bestM.externalFragmentation} KB.
+                    ${extra}
+                </div>
+            </div>
+        `;
+    }
+
     runComparison() {
         const results = MemoryAnalyzer.simulateAll(this.blocks, this.processes, this.currentMode, this.osReserved);
         const ranking = MemoryAnalyzer.rankAlgorithms(results);
+        this.lastComparison = results;
 
         // Winner Banner
-        const winnerBanner = document.getElementById('winner-recommendation-box');
-        if (winnerBanner && ranking) {
-            const bestM = ranking.bestMetrics;
-            winnerBanner.innerHTML = `
-                <div class="winner-trophy-icon">🏆</div>
-                <div>
-                    <div class="winner-title">Recommended algorithm: ${ranking.best}</div>
-                    <div class="winner-desc">
-                        Achieved top efficiency allocating <strong>${bestM.allocatedCount}/${bestM.totalProcesses}</strong> processes with <strong>${bestM.memoryUtilization.toFixed(1)}%</strong> utilization, internal fragmentation ${bestM.internalFragmentation} KB and external fragmentation ${bestM.externalFragmentation} KB.
-                        ${ranking.ties.length > 0 ? `<br/><span style="color:var(--primary);">Tied with: ${ranking.ties.join(', ')}</span>` : ''}
-                    </div>
-                </div>
-            `;
-        }
+        this.renderWinnerBanner(ranking);
 
         // Comparison Table
         const tbody = document.getElementById('compare-table-body');
@@ -756,7 +1023,7 @@ CHAPTER 5 MEMORY MANAGEMENT FORMULAS & NUMERICAL PROOF
             tbody.innerHTML = '';
             results.forEach(r => {
                 const m = r.metrics;
-                const isWinner = ranking && r.name === ranking.best;
+                const isWinner = ranking && r.name === ranking.best && m.allocatedCount > 0;
                 const tr = document.createElement('tr');
                 if (isWinner) tr.style.background = 'var(--success-subtle)';
 
@@ -774,36 +1041,45 @@ CHAPTER 5 MEMORY MANAGEMENT FORMULAS & NUMERICAL PROOF
             });
         }
 
-        // Render Canvas Charts
-        setTimeout(() => {
-            SimulationCharts.renderUtilizationChart('chart-utilization', results);
-            SimulationCharts.renderFragmentationChart('chart-fragmentation', results);
-        }, 50);
+        // Render Canvas Charts (after the tab is visible, so the canvases have a size)
+        setTimeout(() => this.renderCharts(), 50);
     }
 
-    updateSimView() {
-        if (this.currentTab === 'sim') {
-            this.prepareSimulation();
-        }
+    renderCharts() {
+        if (!this.lastComparison) return;
+        SimulationCharts.renderUtilizationChart('chart-utilization', this.lastComparison);
+        SimulationCharts.renderFragmentationChart('chart-fragmentation', this.lastComparison);
     }
 
     exportPDF() {
         window.print();
     }
 
+    // Saves text as a file. The link is added to the page for browsers that need it,
+    // and the temporary URL is released afterwards.
+    downloadFile(filename, content, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     exportCSV() {
         const results = MemoryAnalyzer.simulateAll(this.blocks, this.processes, this.currentMode, this.osReserved);
-        let csv = 'Algorithm,Allocated,UsedMemory_KB,InternalFrag_KB,ExternalFrag_KB,LargestHole_KB,Utilization_Pct\n';
+        // "Allocated" and "Total" are separate numeric columns: a value like 3/4
+        // would be turned into a date by spreadsheet programs.
+        let csv = 'Algorithm,AllocatedProcesses,TotalProcesses,UsedMemory_KB,InternalFrag_KB,ExternalFrag_KB,LargestHole_KB,Utilization_Pct,TotalScans\n';
         results.forEach(r => {
             const m = r.metrics;
-            csv += `"${r.name}",${m.allocatedCount}/${m.totalProcesses},${m.usedMemory},${m.internalFragmentation},${m.externalFragmentation},${m.largestFreeHole},${m.memoryUtilization.toFixed(2)}\n`;
+            csv += `"${r.name}",${m.allocatedCount},${m.totalProcesses},${m.usedMemory},${m.internalFragmentation},${m.externalFragmentation},${m.largestFreeHole},${m.memoryUtilization.toFixed(2)},${m.totalScans}\n`;
         });
 
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'memory_allocation_report.csv';
-        link.click();
+        this.downloadFile('memory_allocation_report.csv', csv, 'text/csv;charset=utf-8;');
     }
 
     exportJSON() {
@@ -811,6 +1087,7 @@ CHAPTER 5 MEMORY MANAGEMENT FORMULAS & NUMERICAL PROOF
         const data = {
             course: 'CCS 3361 Operating Systems - Chapter 5',
             model: this.currentMode,
+            osReserved: this.osReserved,
             initialBlocks: this.blocks,
             initialProcesses: this.processes,
             comparison: results.map(r => ({
@@ -818,11 +1095,7 @@ CHAPTER 5 MEMORY MANAGEMENT FORMULAS & NUMERICAL PROOF
                 metrics: r.metrics
             }))
         };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'memory_allocation_data.json';
-        link.click();
+        this.downloadFile('memory_allocation_data.json', JSON.stringify(data, null, 2), 'application/json');
     }
 }
 

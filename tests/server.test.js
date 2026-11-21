@@ -46,7 +46,7 @@ test("local HTTP server: complete endpoint checks", async (t) => {
         const r = await request(port, "/");
         assert.equal(r.status, 200);
         assert.match(r.headers["content-type"], /^text\/html/);
-        assert.match(r.body, /Work has just started/);
+        assert.match(r.body, /Memory Allocation Simulator/);
     });
 
     await t.test("GET /js/audio.js serves JavaScript", async () => {
@@ -103,6 +103,16 @@ test("local HTTP server: complete endpoint checks", async (t) => {
     await t.test("malformed URL encoding returns 400", async () => {
         const r = await request(port, "/%ZZ");
         assert.equal(r.status, 400);
+    });
+
+    await t.test("a NUL byte in the path returns 400 and does not crash the server", async () => {
+        for (const bad of ["/%00", "/js/%00.js", "/%00/../server.js"]) {
+            const r = await request(port, bad);
+            assert.equal(r.status, 400, bad);
+        }
+        // The same server must still answer normal requests afterwards.
+        const after = await request(port, "/api/info");
+        assert.equal(after.status, 200);
     });
 
     await t.test("encoded directory traversal is forbidden", async () => {

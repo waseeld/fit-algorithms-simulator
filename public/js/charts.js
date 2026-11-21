@@ -149,10 +149,15 @@
         } else {
             width = canvas.clientWidth || canvas.width || 600;
             height = canvas.clientHeight || canvas.height || 320;
-            if (!data.chartMode) {
-                // First render: is the size controlled by CSS or by the
-                // width/height attributes?
-                const cssSized = canvas.clientWidth > 0 && canvas.clientWidth !== canvas.width;
+            // A canvas inside a hidden tab reports clientWidth 0, so its real
+            // size is unknown. Draw with the fallback size and decide the mode
+            // on a later render, once the canvas is visible.
+            const sizeKnown = canvas.clientWidth > 0;
+            if (!data.chartMode && sizeKnown) {
+                // First visible render: is the size controlled by CSS (an
+                // inline style or a stylesheet) or by the width/height attributes?
+                const inlineSize = !!(canvas.style && (canvas.style.width || canvas.style.height));
+                const cssSized = inlineSize || canvas.clientWidth !== canvas.width;
                 if (canvas.dataset) {
                     canvas.dataset.chartMode = cssSized ? "css" : "fixed";
                     canvas.dataset.chartWidth = String(width);

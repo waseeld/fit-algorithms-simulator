@@ -1,7 +1,7 @@
 /**
  * Memory Allocation Simulator - Style V2 (English Only Edition)
  * Modern Minimalist Light Aesthetic (Inter & JetBrains Mono)
- * Pure LTR, streamlined without compaction.
+ * Pure LTR.
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -1344,4 +1344,95 @@ body {
     z-index: 1000;
     opacity: 0;
     transition: opacity 0.15s ease;
+}
+
+/* ==========================================================================
+   Compaction button, shortcut hint, setup message, keyboard focus, print
+   ========================================================================== */
+
+.btn-compact {
+    color: var(--purple);
+    background: var(--purple-subtle);
+    border-color: var(--purple-subtle);
+    margin-left: 4px;
+}
+
+.btn-compact:hover {
+    background: var(--purple-subtle);
+    border-color: var(--purple);
+}
+
+.btn-secondary:disabled,
+.btn-compact:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.speed-end {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.shortcut-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 0 4px;
+}
+
+.shortcut-hint kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-surface-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
+.setup-message {
+    min-height: 20px;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--danger);
+}
+
+/* Visible focus for keyboard users */
+.tab-btn:focus-visible,
+.preset-card-item:focus-visible,
+.btn-secondary:focus-visible,
+.btn-icon:focus-visible,
+.btn-play:focus-visible,
+.btn-primary-sm:focus-visible,
+.btn-hero:focus-visible,
+.btn-ctrl:focus-visible,
+.btn-chip-remove:focus-visible,
+.slider-range:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+}
+
+/* Printing (Export PDF): keep the content, drop the controls */
+@media print {
+    body {
+        background: #FFFFFF;
+    }
+
+    .nav-container,
+    .header-controls,
+    .export-buttons-group,
+    .action-bar-row,
+    .sim-controls-toolbar,
+    .shortcut-hint,
+    .setup-message {
+        display: none !important;
+    }
+
+    .panel-card,
+    .kpi-card,
+    .winner-hero-banner {
+        box-shadow: none;
+        break-inside: avoid;
+    }
 }

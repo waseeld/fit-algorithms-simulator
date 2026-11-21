@@ -178,3 +178,40 @@ test("prepareResults reads numbers nested under metrics (analyzer shape)", () =>
     assert.equal(Math.round(rows[0].utilization * 10) / 10, 68.6);
     assert.equal(rows[0].external, 10);
 });
+
+test("a canvas in a hidden tab is not locked to the fallback size", () => {
+    // A canvas inside a hidden tab reports clientWidth 0. Its CSS size must be
+    // detected later, once it is visible, instead of freezing at 600x320.
+    const { canvas } = createCanvas(300, 150);
+    canvas.style.width = "100%";
+    canvas.style.height = "240px";
+    canvas.clientWidth = 0;
+    canvas.clientHeight = 0;
+
+    Charts.renderUtilizationChart(canvas, sample());
+    assert.equal(canvas.dataset.chartMode, undefined, "mode must stay undecided while hidden");
+    assert.equal(canvas.style.width, "100%", "the CSS width must not be overwritten");
+
+    // The tab becomes visible: the canvas now has a real CSS size.
+    canvas.clientWidth = 640;
+    canvas.clientHeight = 240;
+    const result = Charts.renderUtilizationChart(canvas, sample());
+    assert.equal(result.ok, true);
+    assert.equal(canvas.dataset.chartMode, "css");
+    assert.equal(canvas.width, 640);
+    assert.equal(canvas.style.width, "100%");
+
+    // After a window resize the next render follows the new size.
+    canvas.clientWidth = 480;
+    Charts.renderUtilizationChart(canvas, sample());
+    assert.equal(canvas.width, 480);
+});
+
+test("a canvas sized by its width attribute keeps that size", () => {
+    const { canvas } = createCanvas(520, 300);
+    canvas.clientWidth = 520;
+    canvas.clientHeight = 300;
+    Charts.renderUtilizationChart(canvas, sample());
+    assert.equal(canvas.dataset.chartMode, "fixed");
+    assert.equal(canvas.width, 520);
+});

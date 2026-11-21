@@ -32,9 +32,12 @@ class MemoryAnalyzer {
             0
         );
 
-        // An exact fit is a process occupying a block with no leftover.
+        // An exact fit is a process that filled the hole it was given with
+        // nothing left over. In dynamic mode the hole is split, so block.size
+        // already equals the process size; originalSize keeps the hole size
+        // from before the split and is what must be compared.
         const exactFitsCount = allocatedBlocks.filter(
-            block => block.size === block.process.size
+            block => block.originalSize === block.process.size
         ).length;
         // The UI uses 50 KB as its small-hole diagnostic threshold.
         const unusableHolesCount = freeHoles.filter(size => size > 0 && size < 50).length;
@@ -111,11 +114,20 @@ class MemoryAnalyzer {
             metrics.externalFragmentation === bestMetrics.externalFragmentation &&
             metrics.totalScans === bestMetrics.totalScans;
 
+        // Same memory outcome as the winner, ignoring the scan count. Such an
+        // algorithm is "equivalent" for memory use and only loses on speed.
+        const sameOutcome = metrics =>
+            metrics.allocatedCount === bestMetrics.allocatedCount &&
+            Math.abs(metrics.memoryUtilization - bestMetrics.memoryUtilization) < 0.01 &&
+            metrics.internalFragmentation === bestMetrics.internalFragmentation &&
+            metrics.externalFragmentation === bestMetrics.externalFragmentation;
+
         return {
             best: sorted[0].name,
             bestMetrics,
             ranking: sorted.map(result => result.name),
-            ties: sorted.slice(1).filter(result => isTie(result.metrics)).map(result => result.name)
+            ties: sorted.slice(1).filter(result => isTie(result.metrics)).map(result => result.name),
+            equivalent: sorted.slice(1).filter(result => sameOutcome(result.metrics)).map(result => result.name)
         };
     }
 }

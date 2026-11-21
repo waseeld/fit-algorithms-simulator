@@ -84,6 +84,11 @@
             if (this.ruler) {
                 this.ruler.innerHTML = "";
             }
+            // The tile under the mouse is about to be replaced, so its
+            // mouseleave will never fire: hide the tooltip here or it stays stuck.
+            if (this.tooltip && this.tooltip.style) {
+                this.tooltip.style.opacity = "0";
+            }
 
             var total = list.reduce(function (sum, b) { return sum + num(b.size); }, 0);
             if (list.length === 0 || total <= 0) {

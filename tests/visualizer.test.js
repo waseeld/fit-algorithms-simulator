@@ -107,3 +107,10 @@ test("tiles and the map have accessible labels", () => {
     assert.match(row.attrs["aria-label"], /2 blocks, 600 KB total/);
     assert.match(row.children[1].attrs["aria-label"], /Process: P1 \(212 KB\)/);
 });
+
+test("rendering again hides a tooltip that was left open", () => {
+    const viz = new MemoryVisualizer("map");
+    viz.tooltip = { style: { opacity: "1" }, innerHTML: "" };
+    viz.render([free, used]);
+    assert.equal(viz.tooltip.style.opacity, "0");
+});

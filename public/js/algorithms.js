@@ -36,6 +36,22 @@ class MemoryAllocator {
         let nextBlockId = Math.max(0, ...blocks.map(block => Number(block.id) || 0)) + 1;
 
         processes.forEach((process, index) => {
+            // A size that is not a positive number can never be a real request
+            // (0 KB would "succeed" and a negative size would grow memory).
+            if (!Number.isFinite(process.size) || process.size <= 0) {
+                process.isAllocated = false;
+                process.allocatedBlockId = null;
+                steps.push(new MemoryModels.AllocationStep({
+                    stepNumber: index + 1,
+                    process,
+                    status: 'FAILED',
+                    message: `${process.name} has an invalid size (${process.size} KB): sizes must be positive numbers`,
+                    candidates: [],
+                    snapshot: blocks
+                }));
+                return;
+            }
+
             const decision = this.chooseBlock(process, blocks);
             const candidates = decision.candidates || [];
 

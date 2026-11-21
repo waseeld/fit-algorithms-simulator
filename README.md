@@ -10,7 +10,7 @@ The project aims to explain contiguous memory allocation and compare three strat
 - **Best Fit:** use the smallest available block that fits a process.
 - **Worst Fit:** use the largest available block that fits a process.
 
-The complete application is planned to visualize allocation decisions, support fixed and dynamic memory configurations, describe internal and external fragmentation, and compare algorithm metrics. **These simulator features are still being developed by the assigned teams.**
+The application visualizes every allocation decision step by step, supports fixed and dynamic (hole-splitting) memory configurations, shows internal and external fragmentation, offers memory compaction, and compares the three algorithms with tables and charts.
 
 ## Technology
 
@@ -30,12 +30,12 @@ No third-party npm dependencies are required by the current local server or test
 | Read-only server information API | `GET /api/info` | Implemented and automatically tested |
 | Sound effects and mute control | `public/js/audio.js` | Implemented and automatically tested |
 | Project setup and instructions | `README.md` | Documented |
-| Memory models, algorithms and metrics | `memory.js`, `algorithms.js`, `analyzer.js` | Team 1 — awaiting integration |
-| Application controller and visualization | `app.js`, `visualizer.js`, HTML/CSS | Team 2 — awaiting integration |
-| Comparison charts | `public/js/charts.js` | Implemented and automatically tested (needs Team 1 results and Team 2 canvases) |
+| Memory models, algorithms and metrics | `memory.js`, `algorithms.js`, `analyzer.js` | Team 1 — integrated, automatically tested against an independent reference |
+| Application controller and visualization | `app.js`, `visualizer.js`, HTML/CSS | Team 2 — integrated |
+| Comparison charts | `public/js/charts.js` | Implemented and automatically tested |
 | Benchmark presets (example workloads) | `public/js/presets.js` | Implemented and automatically tested against a reference simulator |
 
-A page that looks empty is expected while `public/index.html` contains only a placeholder. A successful HTTP response does **not** mean that the full graphical simulator is ready.
+The automated suite does not open a browser, so check the interface in a real browser after any change to `app.js`, `index.html` or the CSS.
 
 ## How to run locally
 
@@ -86,7 +86,29 @@ Remove-Item Env:PORT
 
 `status: "ok"` means that **the HTTP server** is responding. It does not mean the allocation algorithms are implemented or tested. The version is read from `package.json`. The route also supports HEAD requests without a response body.
 
-The local server supports GET and HEAD for static files under `public/`. It returns 400 for malformed URL encoding, 403 for paths attempting to escape `public/`, 404 for missing files, and 405 for unsupported methods. It also checks resolved paths to prevent serving symlinks pointing outside `public/`.
+The local server supports GET and HEAD for static files under `public/`. It returns 400 for malformed URL encoding or a NUL byte in the path, 403 for paths attempting to escape `public/`, 404 for missing files, and 405 for unsupported methods. An unexpected error while handling one request returns 500 and never stops the server. It also checks resolved paths to prevent serving symlinks pointing outside `public/`.
+
+## Using the simulator
+
+| Tab | What it does |
+| --- | --- |
+| 1 Setup & Workload | Load one of nine presets or build a workload (partitions 10–100,000 KB, processes 5–100,000 KB, at most 30 of each, whole numbers only). Choose **Fixed Partitions** or **Dynamic (Hole Splitting)** and an optional OS area. |
+| 2 Live Simulation | Run or step through one algorithm. **⚡ Compact** (or the **C** key, dynamic mode only) moves all processes to the start of memory and merges every free hole; the failed or pending processes are then retried on the compacted memory with **Next Step**. |
+| 3 Results & Analysis | KPI cards, final memory map, per-process table and the formula substitution for the selected algorithm. Compaction is a simulation-tab action and is not part of these results. |
+| 4 Algorithm Comparison | Ranking banner, comparison table and two charts. Export the table as CSV or JSON, or print the tab to PDF. |
+| 5 Chapter 5 Reference | Theory summary and the three Slide 9 exercises, with numbers that match the simulator (checked by `tests/engine.test.js`). |
+
+Keyboard shortcuts: **Space** run/pause, **←** / **→** step, **C** compact, **R** reset (simulation tab only), **1**–**5** switch tabs. Browser shortcuts such as Ctrl+C and Ctrl+R are never intercepted.
+
+How the metrics are defined (these are the project's rules, shown in the proof box of the Results tab):
+
+- **Memory utilization** = allocated process KB ÷ total user memory × 100. The OS area is not counted.
+- **Internal fragmentation** = Σ (partition size − process size) over allocated partitions. It is always 0 in dynamic mode, where every hole is split to the exact process size.
+- **External fragmentation** = total free memory − largest free hole.
+- **Exact fit** = a process that fills the hole it was given with nothing left over. **Unusable small hole** = a free hole smaller than 50 KB.
+- **Ranking** (best first): more processes allocated, higher utilization, lower internal fragmentation, lower external fragmentation, fewer hole scans.
+
+The page loads the Inter and JetBrains Mono fonts from Google Fonts. Without internet the browser uses its default fonts and everything else works.
 
 ## Audio module interface
 
@@ -166,26 +188,24 @@ The tests use only Node.js built-in modules and do not modify application files 
 - `tests/audio.test.js` checks method availability, lazy AudioContext setup, all four tones, muting/unmuting, suspended audio recovery and browsers without Web Audio.
 - `tests/charts.test.js` checks result parsing (array, object, fraction or percent), bar labels, the "Best" marker, empty data, missing canvas and repeated rendering.
 - `tests/presets.test.js` checks every preset against an independent reference simulator, that results do not depend on tie-breaking, and the helper functions.
-- `tests/integration.test.js` checks that all scripts are valid JavaScript, that the server serves them, and (once Team 1 merges) that `simulateAll` results for every preset match the expected counts and can be charted. Checks that need unfinished files are reported as skipped, not passed.
-- `tests/server.test.js` starts a temporary HTTP server on a random local port and checks HTML, JavaScript, JSON API metadata, HEAD responses, invalid methods, missing files, invalid URLs, directory traversal and invalid configured ports.
+- `tests/integration.test.js` checks that all scripts are valid JavaScript, that the server serves them, and that `simulateAll` results for every preset match the expected counts and can be charted.
+- `tests/engine.test.js` compares First, Best and Worst Fit with an independent reference on 400 random workloads in both modes (counts, scans, fragmentation, address and size conservation), and checks exact-fit counting, rejection of invalid sizes, compaction, the ranking helpers and the numbers quoted in the Chapter 5 tab.
+- `tests/visualizer.test.js` checks the memory map tiles, highlights, ruler, tooltips and the empty state.
+- `tests/server.test.js` starts a temporary HTTP server on a random local port and checks HTML, JavaScript, JSON API metadata, HEAD responses, invalid methods, missing files, invalid URLs (including a NUL byte), directory traversal and invalid configured ports.
 
-**Verified on November 13, 2026 (charts, presets and integration checks, together with the server and audio tests):** all checks passed except the integration checks that wait for Team 1 files, which are skipped.
+**Verified on November 21, 2026:** 75 tests passed, 0 failed, 0 skipped, with Node.js 22 on Linux. The charts, keyboard, compaction, input-validation, export and printing behaviour was also checked in headless Chromium.
 
-**Verified on November 12, 2026 (server and audio):** 18 checks passed, 0 failed, 0 skipped, with Node.js 26.13.0 and npm 11.20.0 on Windows.
-
-Earlier manual browser tests also confirmed that the four sounds played and the mute toggle worked. Automated audio tests use browser API mocks, so they do not replace listening in a real browser after the final UI is integrated.
+Earlier manual browser tests also confirmed that the four sounds played and the mute toggle worked. Automated audio tests use browser API mocks, so they do not replace listening in a real browser.
 
 ## Integration checklist (pending other teams)
 
-- [ ] Team 1 integrates the three allocation algorithms, memory models and metrics.
-- [ ] Team 2 builds the actual HTML/CSS UI, simulation controls and visualization.
-- [ ] Team 2 loads `audio.js` and calls sound methods in response to actual UI events.
-- [x] Team 3 Student 1 delivered `charts.js` and `presets.js` (unit-tested). Final integration is pending Team 1 and Team 2.
-- [ ] Re-run `npm test` after integration.
-- [ ] Complete manual end-to-end scenarios, including successful/failed allocation, compaction, chart comparisons and step-by-step controls.
+- [x] Team 1 integrated the three allocation algorithms, memory models and metrics.
+- [x] Team 2 built the HTML/CSS UI, simulation controls and visualization.
+- [x] Team 2 loads `audio.js` and plays the sounds from real UI events.
+- [x] Team 3 Student 1 delivered `charts.js` and `presets.js` (unit-tested).
+- [x] `npm test` passes after integration.
+- [ ] Complete a manual end-to-end pass in a real browser (successful and failed allocation, compaction, chart comparison, step controls, exports) before the final demonstration.
 - [ ] Record screenshots/results for the final report and presentation.
-
-Do not claim these integration checks have passed until the dependent modules are actually implemented and tested.
 
 ## Project files
 
@@ -207,9 +227,11 @@ public/
 tests/
   audio.test.js
   charts.test.js
+  engine.test.js
   integration.test.js
   presets.test.js
   server.test.js
+  visualizer.test.js
 server.js
 package.json
 README.md

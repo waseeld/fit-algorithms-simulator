@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memory Allocation Simulator | Contiguous Memory Allocation</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/animations.css">
 </head>
@@ -37,23 +38,23 @@
         <!-- Segmented Navigation Tabs -->
         <div class="nav-container">
             <nav class="nav-tabs-bar" role="tablist">
-                <button class="tab-btn active" data-tab="setup">
+                <button class="tab-btn active" data-tab="setup" role="tab" aria-selected="true" aria-controls="tab-setup">
                     <span class="tab-num">1</span>
                     <span class="tab-text">Setup & Workload</span>
                 </button>
-                <button class="tab-btn" data-tab="sim">
+                <button class="tab-btn" data-tab="sim" role="tab" aria-selected="false" aria-controls="tab-sim">
                     <span class="tab-num">2</span>
                     <span class="tab-text">Live Simulation</span>
                 </button>
-                <button class="tab-btn" data-tab="results">
+                <button class="tab-btn" data-tab="results" role="tab" aria-selected="false" aria-controls="tab-results">
                     <span class="tab-num">3</span>
                     <span class="tab-text">Results & Analysis</span>
                 </button>
-                <button class="tab-btn" data-tab="compare">
+                <button class="tab-btn" data-tab="compare" role="tab" aria-selected="false" aria-controls="tab-compare">
                     <span class="tab-num">4</span>
                     <span class="tab-text">Algorithm Comparison</span>
                 </button>
-                <button class="tab-btn" data-tab="chapter5">
+                <button class="tab-btn" data-tab="chapter5" role="tab" aria-selected="false" aria-controls="tab-chapter5">
                     <span class="tab-num">5</span>
                     <span class="tab-text">Chapter 5 Reference</span>
                 </button>
@@ -64,7 +65,7 @@
         <main class="main-viewport">
 
             <!-- TAB 1: WORKLOAD SETUP -->
-            <section class="tab-pane active" id="tab-setup">
+            <section class="tab-pane active" id="tab-setup" role="tabpanel">
                 <!-- Chapter 5 Slide 9 Presets (Clean Card Selector) -->
                 <div class="panel-card">
                     <div class="panel-header">
@@ -99,7 +100,7 @@
                                 <div class="panel-subtitle">Available free holes in physical memory in address order</div>
                             </div>
                             <div class="quick-add-form">
-                                <input type="number" class="num-field" id="input-block-size" value="200" min="10" step="50" placeholder="Size KB">
+                                <input type="number" class="num-field" id="input-block-size" value="200" min="10" max="100000" step="50" placeholder="Size KB" aria-label="Partition size in KB">
                                 <button class="btn-primary-sm" id="btn-add-block">+ Add</button>
                             </div>
                         </div>
@@ -120,7 +121,7 @@
                                 <div class="panel-subtitle">Incoming memory requests in arrival order</div>
                             </div>
                             <div class="quick-add-form">
-                                <input type="number" class="num-field" id="input-proc-size" value="150" min="5" step="25" placeholder="Size KB">
+                                <input type="number" class="num-field" id="input-proc-size" value="150" min="5" max="100000" step="25" placeholder="Size KB" aria-label="Process size in KB">
                                 <button class="btn-primary-sm" id="btn-add-proc">+ Add</button>
                             </div>
                         </div>
@@ -140,7 +141,7 @@
                         <div class="panel-title">Physical Memory Map Preview</div>
                         <div class="os-input-wrap">
                             <label for="input-os-reserved">OS Kernel Reserved:</label>
-                            <input type="number" class="num-field mini" id="input-os-reserved" value="0" min="0" step="50">
+                            <input type="number" class="num-field mini" id="input-os-reserved" value="0" min="0" max="100000" step="50">
                             <span class="unit-text">KB</span>
                         </div>
                     </div>
@@ -160,10 +161,11 @@
 
                     <button class="btn-hero" id="btn-start-sim">Start Simulation →</button>
                 </div>
+                <div class="setup-message" id="setup-message" role="status" aria-live="polite"></div>
             </section>
 
             <!-- TAB 2: LIVE SIMULATION -->
-            <section class="tab-pane" id="tab-sim">
+            <section class="tab-pane" id="tab-sim" role="tabpanel">
                 <!-- Simulation Control Toolbar -->
                 <div class="sim-controls-toolbar">
                     <div class="algo-picker-wrap">
@@ -182,15 +184,17 @@
                         <button class="btn-icon" id="btn-sim-prev" title="Previous Step">⏮</button>
                         <button class="btn-icon" id="btn-sim-next" title="Next Step">⏭</button>
                         <button class="btn-icon" id="btn-sim-reset" title="Reset">🔄</button>
+                        <button class="btn-secondary btn-compact" id="btn-sim-compact" title="Compact memory: merge all free holes into one (shortcut C)">⚡ Compact</button>
                     </div>
 
                     <div class="speed-control-wrap">
-                        <span class="speed-label">Speed:</span>
-                        <input type="range" class="slider-range" id="sim-speed-slider" min="200" max="1800" value="800" step="100">
+                        <span class="speed-label">Speed:</span><span class="speed-end">Slow</span>
+                        <input type="range" class="slider-range" id="sim-speed-slider" min="200" max="1800" value="1200" step="100" aria-label="Playback speed (right is faster)"><span class="speed-end">Fast</span>
                     </div>
 
                     <div class="step-badge" id="lbl-step-counter">Step 0 / 0</div>
                 </div>
+                <div class="shortcut-hint">Shortcuts: <kbd>Space</kbd> run / pause · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>C</kbd> compact (dynamic mode) · <kbd>R</kbd> reset · <kbd>1</kbd>–<kbd>5</kbd> switch tabs</div>
 
                 <!-- Process Queue Flow Track -->
                 <div class="panel-card compact">
@@ -248,7 +252,7 @@
             </section>
 
             <!-- TAB 3: RESULTS & ANALYSIS -->
-            <section class="tab-pane" id="tab-results">
+            <section class="tab-pane" id="tab-results" role="tabpanel">
                 <!-- 4 Crisp KPI Cards -->
                 <div class="kpi-cards-row">
                     <div class="kpi-card">
@@ -300,8 +304,8 @@
                                 <th>Process</th>
                                 <th>Process Size</th>
                                 <th>Assigned Partition</th>
-                                <th>Partition Size</th>
-                                <th>Leftover / Wasted</th>
+                                <th id="th-partition">Partition Size</th>
+                                <th id="th-leftover">Wasted (internal frag.)</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -317,7 +321,7 @@
             </section>
 
             <!-- TAB 4: ALGORITHM COMPARISON -->
-            <section class="tab-pane" id="tab-compare">
+            <section class="tab-pane" id="tab-compare" role="tabpanel">
                 <!-- Comparison Header & Export Actions -->
                 <div class="panel-card compact">
                     <div class="comparison-actions-header">
@@ -371,7 +375,7 @@
             </section>
 
             <!-- TAB 5: CHAPTER 5 REFERENCE & EXERCISES -->
-            <section class="tab-pane" id="tab-chapter5">
+            <section class="tab-pane" id="tab-chapter5" role="tabpanel">
                 <div class="panel-card hero-theory-card">
                     <div class="theory-hero-title">Chapter 5: Memory Management (Operating System Concepts)</div>
                     <div class="theory-hero-desc">
@@ -397,7 +401,7 @@
                 <div class="panel-card">
                     <div class="theory-section-title">2. Dynamic Storage-Allocation Strategies (Slide 8)</div>
                     <div class="theory-text">
-                        How to satisfy a request of size \( n \) from a list of free holes:
+                        How to satisfy a request of size <em>n</em> from a list of free holes:
                         <div class="theory-cards-grid">
                             <div class="theory-callout-card blue">
                                 <strong>First-Fit:</strong>
@@ -423,9 +427,11 @@
                             <div class="exercise-badge">Exercise 1: Core Benchmark</div>
                             <div class="exercise-params">Partitions: <code>[100, 500, 200, 300, 600] KB</code> | Processes: <code>[212, 417, 112, 426] KB</code></div>
                             <div class="exercise-desc">
-                                • <strong>First Fit:</strong> Allocates P1 to 500, P2 to 600, P3 to 200. P4 (426 KB) fails because remaining free holes are only 100 KB and 300 KB. Total internal fragmentation = 559 KB.<br/>
-                                • <strong>Best Fit:</strong> Allocates P1 to 300, P2 to 500, P3 to 200, P4 to 600. All 4 processes succeed (4/4)! Total internal fragmentation = only 433 KB.<br/>
-                                • <strong>Worst Fit:</strong> Allocates P1 to 600, P2 to 500, P3 to 300. P4 (426 KB) fails. Total internal fragmentation = 659 KB.
+                                • <strong>Fixed Partitions mode</strong> (the leftover is internal fragmentation):<br/>
+                                &nbsp;&nbsp;– <strong>First Fit:</strong> P1 to 500, P2 to 600, P3 to 200. P4 (426 KB) fails because only the 100 KB and 300 KB partitions are left. Internal fragmentation = 559 KB.<br/>
+                                &nbsp;&nbsp;– <strong>Best Fit:</strong> P1 to 300, P2 to 500, P3 to 200, P4 to 600. All 4 processes succeed (4/4). Internal fragmentation = 433 KB.<br/>
+                                &nbsp;&nbsp;– <strong>Worst Fit:</strong> P1 to 600, P2 to 500, P3 to 300. P4 fails. Internal fragmentation = 659 KB.<br/>
+                                • <strong>Dynamic mode</strong> (the preset loads in this mode): every hole is split, so internal fragmentation is 0 KB and the waste appears as external fragmentation instead: 659 KB (First Fit), 359 KB (Best Fit) and 659 KB (Worst Fit).
                             </div>
                         </div>
 
@@ -433,8 +439,10 @@
                             <div class="exercise-badge">Exercise 2: Exact Fits & Unusable Holes</div>
                             <div class="exercise-params">Partitions: <code>[50, 100, 200, 350] KB</code> | Processes: <code>[45, 50, 80, 120, 200] KB</code></div>
                             <div class="exercise-desc">
-                                • <strong>Exact Fits:</strong> Process P2 (50 KB) exactly matches partition 50 KB, and process P5 (200 KB) exactly matches partition 200 KB without any internal fragmentation.<br/>
-                                • <strong>Unusable Holes:</strong> When P1 (45 KB) is assigned to the 50 KB partition, only 5 KB remains—a tiny leftover hole that cannot fit any pending process.
+                                • <strong>Dynamic mode (First Fit and Best Fit place all 5):</strong> P1 (45 KB) takes the 50 KB partition and leaves a 5 KB hole. P2 (50 KB) goes to the 100 KB partition, P3 (80 KB) to the 200 KB partition and leaves a 120 KB hole, P4 (120 KB) fills that 120 KB hole exactly, and P5 (200 KB) goes to the 350 KB partition.<br/>
+                                • <strong>Exact fit:</strong> only P4, which fills its hole with nothing left over. The Results tab shows <em>Exact Fits: 1</em>.<br/>
+                                • <strong>Unusable hole:</strong> the 5 KB hole next to P1 is smaller than every request (the smallest is 45 KB), so it can never be used. The Results tab shows <em>Unusable Small Holes: 1</em>.<br/>
+                                • <strong>Fixed Partitions mode:</strong> there are no exact fits. First Fit and Best Fit place 4 of 5 (P5 fails) and Worst Fit places 3 of 5.
                             </div>
                         </div>
 
@@ -442,8 +450,9 @@
                             <div class="exercise-badge">Exercise 3: Process Arrival Order Effect</div>
                             <div class="exercise-params">Partitions: <code>[300, 100, 350, 600, 200] KB</code> | Processes: <code>[115, 500, 210, 90, 430] KB</code></div>
                             <div class="exercise-desc">
-                                • <strong>Original Arrival Order:</strong> Small process P1 (115 KB) grabs the initial 300 KB partition, preventing larger subsequent processes from finding suitable blocks.<br/>
-                                • <strong>Sorted Descending Order:</strong> Sorting processes from largest to smallest allows large requests to claim large partitions first, dramatically improving First Fit success rate!
+                                • <strong>First Fit and Best Fit:</strong> place 4 of 5 processes in both orders. Only the 600 KB partition can hold P2 (500 KB) or P5 (430 KB), so at most one of them can ever be placed.<br/>
+                                • <strong>Worst Fit:</strong> in the original order P1 (115 KB) takes the largest hole (600 KB) first, so P2 (500 KB) fails and only 3 of 5 are placed. Sorted from largest to smallest, the 500 KB process claims the 600 KB partition first and Worst Fit also reaches 4 of 5.<br/>
+                                • <strong>Lesson:</strong> arrival order can change the result, but sorting is not a guaranteed fix. Use the sort button on the Setup tab, then compare the three algorithms on the Comparison tab.
                             </div>
                         </div>
                     </div>
@@ -456,7 +465,7 @@
                         <ul class="theory-list">
                             <li><strong>External Fragmentation:</strong> Total memory space exists to satisfy a request, but it is not contiguous; storage is fragmented into a large number of small holes scattered across memory.</li>
                             <li><strong>Internal Fragmentation:</strong> Memory allocated to a process is slightly larger than requested memory. The unused space within the allocated partition is internal to that partition and cannot be used by other processes.</li>
-                            <li><strong>50-Percent Rule:</strong> Analysis shows that given \( N \) allocated blocks, another \( 0.5 N \) blocks will be lost to external fragmentation. That is, 1/3 of memory may be unusable!</li>
+                            <li><strong>50-Percent Rule:</strong> Analysis shows that given <em>N</em> allocated blocks, another 0.5<em>N</em> blocks will be lost to external fragmentation. That is, 1/3 of memory may be unusable!</li>
                         </ul>
                     </div>
                 </div>

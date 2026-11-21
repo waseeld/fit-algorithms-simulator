@@ -55,4 +55,6 @@ Assumption to confirm with Team 1: the mode names are `"fixed"` and `"dynamic"`.
 
 ## Tests
 
-Run `npm test` (needs the `test` script from Haitham's package.json, or run `node --test tests/`). Files: `tests/charts.test.js`, `tests/presets.test.js`, `tests/integration.test.js`. Integration checks that depend on unfinished files are reported as skipped.
+Run `npm test` (or `node --test tests/`). Files: `tests/charts.test.js`, `tests/presets.test.js`, `tests/integration.test.js`, `tests/engine.test.js`.
+
+Canvas size: a chart canvas that is inside a hidden tab has no size yet, so `charts.js` waits and decides on the first render after the canvas becomes visible. A canvas sized by CSS is redrawn at its current width every time a render function is called (the app does this on tab change and on window resize); a canvas sized by its `width`/`height` attributes keeps that size.
